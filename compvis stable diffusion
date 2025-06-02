@@ -1,0 +1,359 @@
+ #cell1
+ !pip install -q datasets transformers sentencepiece
+
+
+#cell2
+!pip install -q datasets transformers sentencepiece diffusers torch accelerate
+
+#cell3
+!pip install huggingface_hub
+
+#cell4
+!huggingface-cli login
+
+#cell5
+import torch
+from transformers import CLIPTextModel, CLIPTokenizer
+from diffusers import StableDiffusionPipeline
+from datasets import load_dataset
+from huggingface_hub import login
+
+#cell6
+# Load the model from Hugging Face
+pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", torch_dtype=torch.float16)
+pipe = pipe.to("cuda")  # Move the pipeline to GPU (if available)
+
+#cell7
+from PIL import Image
+from IPython.display import display
+prompt = " royal enfield gt650"
+image = pipe(prompt).images[0]
+
+# Display the image
+display(image)
+
+#cell8
+!git clone https://huggingface.co/datasets/nlphuji/flickr30k
+
+
+#cell9
+!ls flickr30k
+
+#cell10
+!unzip flickr30k/flickr30k-images.zip -d flickr30k/images
+
+#cell11
+# 3. Install required libraries
+!pip install datasets pillow pandas
+
+# 4. Inspect the CSV so you know its columns
+!head -n 5 flickr30k/flickr_annotations_30k.csv
+
+
+#cell12
+# 5. Load the annotations with pandas
+import pandas as pd
+
+csv_path = "flickr30k/flickr_annotations_30k.csv"
+df = pd.read_csv(csv_path)
+
+# Quick sanity check
+print(df.shape)       # e.g. (161283, 2)
+print(df.columns)     # ['image_name','caption']
+df.head()
+
+
+
+#cell13
+import ast
+# 3) Parse the 'raw' column into actual lists
+df["captions"] = df["raw"].apply(ast.literal_eval)
+
+# 4) Explode so each caption is its own row
+df = df.explode("captions").reset_index(drop=True)
+
+# 5) Build a column with full image paths
+df["image"] = "flickr30k/images/" + df["filename"]
+
+# 6) Keep only what we need
+df = df[["image","captions"]].rename(columns={"captions":"caption"})
+
+# Quick sanity check
+print(df.shape)
+print(df.head())
+
+#cell14
+import os
+import zipfile
+
+#Make sure our target folder exists
+os.makedirs("flickr30k/images", exist_ok=True)
+
+# Define the path to the zip file
+zip_path = "flickr30k/flickr30k-images.zip"
+
+# Unzip all images into flickr30k/images/
+with zipfile.ZipFile(zip_path, "r") as zf:
+    zf.extractall("flickr30k/images")
+
+print("✅ Extracted images into flickr30k/images/", len(os.listdir("flickr30k/images")), "files")
+
+#cell15
+# Just to be sure
+!ls flickr30k/images | head -n 5
+
+#cell6
+import os
+from datasets import Dataset, Features, Image, Value
+import pandas as pd, ast
+
+# 1) Read & explode the captions as before
+df = pd.read_csv("flickr30k/flickr_annotations_30k.csv")
+df["captions"] = df["raw"].apply(ast.literal_eval)
+df = df.explode("captions").reset_index(drop=True)
+
+# 2) Point to the *nested* folder where your images actually are
+IMAGE_ROOT = "flickr30k/images/flickr30k-images"
+df["image"] = df["filename"].apply(lambda fn: os.path.join(IMAGE_ROOT, fn))
+
+# 3) Drop the old columns & rename
+df = df[["image","captions"]].rename(columns={"captions":"caption"})
+
+# 4) Quick sanity check: make sure the first few paths exist
+for p in df["image"].head():
+    print(p, "→", os.path.exists(p))
+
+# 5) Build the Hugging-Face Dataset
+features = Features({
+    "image": Image(),
+    "caption": Value("string")
+})
+hf_ds = Dataset.from_pandas(df, features=features, split="train")
+
+# 6) Now this should load without error:
+print(hf_ds[0])
+
+
+#cell17
+# %%
+# Load model components (assuming you have them loaded as in your notebook)
+from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
+from transformers import CLIPTextModel, CLIPTokenizer
+
+#cell18
+# Load the VAE, Scheduler, UNet, Tokenizer, and Text Encoder
+vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
+tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
+text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="text_encoder")
+unet = UNet2DConditionModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="unet")
+noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
+
+#cell19
+# Move components to GPU
+vae.to("cuda")
+text_encoder.to("cuda")
+unet.to("cuda")
+
+#cell20
+# %%
+# Set up the optimizer and learning rate scheduler
+from accelerate import Accelerator
+from torch.optim import AdamW
+from transformers import get_scheduler
+
+#cell21
+# Define hyperparameters
+learning_rate = 1e-5
+num_epochs = 3
+batch_size = 4
+gradient_accumulation_steps = 1 # Adjust based on GPU memory
+
+#cell22
+# Initialize Accelerator for distributed training (helpful even with one GPU)
+accelerator = Accelerator(mixed_precision="fp16")
+
+#cell23
+# Optimizer
+optimizer = AdamW(unet.parameters(), lr=learning_rate)
+
+#cell24
+# Learning rate scheduler
+lr_scheduler = get_scheduler(
+    "constant",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=len(hf_ds) * num_epochs // gradient_accumulation_steps,
+)
+
+#cell25
+# Prepare everything with Accelerator
+unet, optimizer, lr_scheduler = accelerator.prepare(unet, optimizer, lr_scheduler)
+
+
+#cell26
+# %%
+# Data loading and processing functions (adapt to your dataset structure)
+from torchvision import transforms
+import torch
+
+
+#cell27
+# %%
+# Data loading and processing functions (adapt to your dataset structure)
+from torchvision import transforms
+import torch
+from PIL import Image # Import the PIL library
+
+# %%
+# Image transformations
+transform = transforms.Compose([
+    # Use PIL.Image.BILINEAR for compatibility with older torchvision versions
+    transforms.Resize((248, 248 ), interpolation=Image.BILINEAR),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5], [0.5]),
+])
+
+def preprocess_images(examples):
+    images = [transform(image.convert("RGB")) for image in examples["image"]]
+    return {"pixel_values": images}
+
+def preprocess_text(examples):
+    input_ids = tokenizer(
+        examples["caption"],
+        max_length=tokenizer.model_max_length,
+        padding="max_length",
+        truncation=True,
+        return_tensors="pt",
+    ).input_ids
+    return {"input_ids": input_ids}
+
+#cell28
+# Apply transformations to your dataset
+hf_ds.set_transform(preprocess_images)
+hf_ds.set_transform(preprocess_text)
+
+#cell29
+# Create DataLoader
+train_dataloader = torch.utils.data.DataLoader(
+    hf_ds, batch_size=batch_size, shuffle=True
+)
+
+
+#cell30
+# Prepare dataloader with Accelerator
+train_dataloader = accelerator.prepare(train_dataloader)
+
+
+#cell31
+import torch
+from tqdm.auto import tqdm
+
+
+#cell32
+# Number of training steps per epoch (adjust as needed)
+num_train_steps_per_epoch = len(train_dataloader)
+
+
+#cell33
+import torch
+from tqdm.auto import tqdm
+from torchvision import transforms
+from PIL import Image # Import the PIL library
+from datasets import Dataset, Features, Image as DatasetImage, Value # Rename Image to avoid conflict
+
+# ... (previous imports and code for loading models, optimizer, accelerator, etc.) ...
+
+# Image transformations
+# Use PIL.Image.BILINEAR for compatibility with older torchvision versions
+image_transform = transforms.Compose([
+    transforms.Resize((512, 512), interpolation=Image.BILINEAR), # Resize to 512x512, as VAE works best with this size for SD v1.4
+    transforms.ToTensor(),
+    transforms.Normalize([0.5], [0.5]),
+])
+
+# Preprocessing functions
+def preprocess_images(examples, vae):
+    # Process and normalize the images
+    images = [image_transform(image.convert("RGB")) for image in examples["image"]]
+    images = torch.stack(images) # Stack list of tensors into a single tensor
+
+    # Encode images to latent space using the VAE
+    # Move images to device for VAE encoding
+    images = images.to(vae.device)
+    latents = vae.encode(images).latent_dist.sample()
+    # Scale the latents as per Stable Diffusion practices
+    latents = latents * vae.config.scaling_factor
+    return {"pixel_values": latents.cpu()} # Move latents back to CPU for dataset storage if needed, or handle device placement in training loop
+
+def preprocess_text(examples, tokenizer):
+    input_ids = tokenizer(
+        examples["caption"],
+        max_length=tokenizer.model_max_length,
+        padding="max_length",
+        truncation=True,
+        return_tensors="pt",
+    ).input_ids
+    return {"input_ids": input_ids}
+
+# Combine transformations into a single function
+def preprocess_function(examples, vae, tokenizer):
+    # Apply both image and text preprocessing
+    image_outputs = preprocess_images(examples, vae)
+    text_outputs = preprocess_text(examples, tokenizer)
+    # Merge the results
+    return {**image_outputs, **text_outputs}
+
+
+# Apply the combined transformation to your dataset
+# Pass vae and tokenizer to the preprocessing function
+hf_ds.set_transform(lambda examples: preprocess_function(examples, vae, tokenizer))
+
+
+# Create DataLoader
+train_dataloader = torch.utils.data.DataLoader(
+    hf_ds, batch_size=batch_size, shuffle=True
+)
+
+
+
+#cell34
+# --- Optional: Saving the Fine-tuned Model ---
+accelerator.wait_for_everyone()
+unwrapped_unet = accelerator.unwrap_model(unet)
+unwrapped_unet.save_pretrained("my_finetuned_unet")
+
+#cell35
+# --- Optional: Using the Fine-tuned Model ---
+from diffusers import StableDiffusionPipeline, AutoencoderKL, DDPMScheduler, UNet2DConditionModel
+from transformers import CLIPTextModel, CLIPTokenizer
+from PIL import Image # Import Image here as well for display
+from IPython.display import display
+
+#cell36
+# Load the saved UNet (and other components if you saved them)
+vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
+tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
+text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="text_encoder")
+unet = UNet2DConditionModel.from_pretrained("my_finetuned_unet") # Load your fine-tuned UNet
+noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
+
+#cell37
+# Create a new pipeline with the fine-tuned UNet
+fine_tuned_pipe = StableDiffusionPipeline(
+    vae=vae,
+    text_encoder=text_encoder,
+    tokenizer=tokenizer,
+    unet=unet,
+    scheduler=noise_scheduler,
+    safety_checker=None, # Or load the safety checker if needed
+    feature_extractor=None, # Or load the feature extractor if needed
+    requires_safety_checker=False # Or True if you loaded the safety checker
+)
+
+fine_tuned_pipe = fine_tuned_pipe.to("cuda")
+
+#cell38
+# Generate images with the fine-tuned model
+prompt = "A photo of a person riding a bicycle"
+image = fine_tuned_pipe(prompt).images[0]
+display(image)
