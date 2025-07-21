@@ -332,7 +332,7 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from PIL import Image # Import Image here as well for display
 from IPython.display import display
 
-#cell37
+#cell36
 # Load the saved UNet (and other components if you saved them)
 vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
 tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
@@ -340,7 +340,7 @@ text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", su
 unet = UNet2DConditionModel.from_pretrained("my_finetuned_unet") # Load your fine-tuned UNet
 noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
 
-#cell38
+#cell37
 # Create a new pipeline with the fine-tuned UNet
 fine_tuned_pipe = StableDiffusionPipeline(
     vae=vae,
@@ -355,16 +355,16 @@ fine_tuned_pipe = StableDiffusionPipeline(
 
 fine_tuned_pipe = fine_tuned_pipe.to("cuda")
 
-#cell39
+#cell38
 # Generate images with the fine-tuned model
 prompt = "A photo of a person riding a bicycle"
 image = fine_tuned_pipe(prompt).images[0]
 display(image)
 
-#cell40
+#cell39
 !pip install googletrans==4.0.0-rc1
 
-#cell41
+#cell40
 from googletrans import Translator
 
 # Initialize the translator
@@ -382,7 +382,7 @@ try:
 except Exception as e:
     print(f"Translation failed: {e}")
 
-#cell42
+#cell41
 # Import the Translator
 from googletrans import Translator
 
