@@ -102,7 +102,7 @@ print("✅ Extracted images into flickr30k/images/", len(os.listdir("flickr30k/i
 # Just to be sure
 !ls flickr30k/images | head -n 5
 
-#cell6
+#cell16
 import os
 from datasets import Dataset, Features, Image, Value
 import pandas as pd, ast
@@ -176,14 +176,17 @@ accelerator = Accelerator(mixed_precision="fp16")
 # Optimizer
 optimizer = AdamW(unet.parameters(), lr=learning_rate)
 
+
 #cell24
-# Learning rate scheduler
+# Learning rate scheduler - Update calculation to use effective batch size
+num_update_steps_per_epoch = len(hf_ds) // gradient_accumulation_steps
 lr_scheduler = get_scheduler(
     "constant",
     optimizer=optimizer,
     num_warmup_steps=0,
-    num_training_steps=len(hf_ds) * num_epochs // gradient_accumulation_steps,
+    num_training_steps=num_update_steps_per_epoch * num_epochs,
 )
+
 
 #cell25
 # Prepare everything with Accelerator
@@ -329,7 +332,7 @@ from transformers import CLIPTextModel, CLIPTokenizer
 from PIL import Image # Import Image here as well for display
 from IPython.display import display
 
-#cell36
+#cell37
 # Load the saved UNet (and other components if you saved them)
 vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
 tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
@@ -337,7 +340,7 @@ text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", su
 unet = UNet2DConditionModel.from_pretrained("my_finetuned_unet") # Load your fine-tuned UNet
 noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
 
-#cell37
+#cell38
 # Create a new pipeline with the fine-tuned UNet
 fine_tuned_pipe = StableDiffusionPipeline(
     vae=vae,
@@ -352,8 +355,54 @@ fine_tuned_pipe = StableDiffusionPipeline(
 
 fine_tuned_pipe = fine_tuned_pipe.to("cuda")
 
-#cell38
+#cell39
 # Generate images with the fine-tuned model
 prompt = "A photo of a person riding a bicycle"
 image = fine_tuned_pipe(prompt).images[0]
 display(image)
+
+#cell40
+!pip install googletrans==4.0.0-rc1
+
+#cell41
+from googletrans import Translator
+
+# Initialize the translator
+translator = Translator()
+
+# English text to translate
+english_text = "A photo of a person riding a bicycle"
+# Translate the text to Telugu
+try:
+    translation = translator.translate(english_text, src='en', dest='te')
+    telugu_text = translation.text
+    print(f"Original English: {english_text}")
+    print(f"Translated Telugu: {telugu_text}")
+
+except Exception as e:
+    print(f"Translation failed: {e}")
+
+#cell42
+# Import the Translator
+from googletrans import Translator
+
+# Initialize the translator
+translator = Translator()
+
+# Your Telugu prompt
+telugu_prompt = " సైకిల్ నడుపుతున్న వ్యక్తి యొక్క ఫోటో" 
+
+# Translate the prompt to English
+try:
+    translation = translator.translate(telugu_prompt, src='te', dest='en')
+    english_prompt = translation.text
+    print(f"Original Telugu: {telugu_prompt}")
+    print(f"Translated English: {english_prompt}")
+
+    # Use the translated English prompt with your fine-tuned pipeline
+    # (Assuming 'fine_tuned_pipe' is already defined and loaded)
+    image = fine_tuned_pipe(english_prompt).images[0]
+    display(image)
+
+except Exception as e:
+    print(f"Translation failed: {e}")
