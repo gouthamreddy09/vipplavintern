@@ -1,29 +1,22 @@
- #cell1
- !pip install -q datasets transformers sentencepiece
+!pip install -q datasets transformers sentencepiece
 
 
-#cell2
 !pip install -q datasets transformers sentencepiece diffusers torch accelerate
 
-#cell3
 !pip install huggingface_hub
 
-#cell4
 !huggingface-cli login
 
-#cell5
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import StableDiffusionPipeline
 from datasets import load_dataset
 from huggingface_hub import login
 
-#cell6
 # Load the model from Hugging Face
 pipe = StableDiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4", torch_dtype=torch.float16)
 pipe = pipe.to("cuda")  # Move the pipeline to GPU (if available)
 
-#cell7
 from PIL import Image
 from IPython.display import display
 prompt = " royal enfield gt650"
@@ -32,17 +25,13 @@ image = pipe(prompt).images[0]
 # Display the image
 display(image)
 
-#cell8
 !git clone https://huggingface.co/datasets/nlphuji/flickr30k
 
 
-#cell9
 !ls flickr30k
 
-#cell10
 !unzip flickr30k/flickr30k-images.zip -d flickr30k/images
 
-#cell11
 # 3. Install required libraries
 !pip install datasets pillow pandas
 
@@ -50,7 +39,6 @@ display(image)
 !head -n 5 flickr30k/flickr_annotations_30k.csv
 
 
-#cell12
 # 5. Load the annotations with pandas
 import pandas as pd
 
@@ -64,7 +52,7 @@ df.head()
 
 
 
-#cell13
+
 import ast
 # 3) Parse the 'raw' column into actual lists
 df["captions"] = df["raw"].apply(ast.literal_eval)
@@ -82,7 +70,6 @@ df = df[["image","captions"]].rename(columns={"captions":"caption"})
 print(df.shape)
 print(df.head())
 
-#cell14
 import os
 import zipfile
 
@@ -98,11 +85,9 @@ with zipfile.ZipFile(zip_path, "r") as zf:
 
 print("✅ Extracted images into flickr30k/images/", len(os.listdir("flickr30k/images")), "files")
 
-#cell15
 # Just to be sure
 !ls flickr30k/images | head -n 5
 
-#cell16
 import os
 from datasets import Dataset, Features, Image, Value
 import pandas as pd, ast
@@ -134,13 +119,11 @@ hf_ds = Dataset.from_pandas(df, features=features, split="train")
 print(hf_ds[0])
 
 
-#cell17
 # %%
 # Load model components (assuming you have them loaded as in your notebook)
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer
 
-#cell18
 # Load the VAE, Scheduler, UNet, Tokenizer, and Text Encoder
 vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
 tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
@@ -148,59 +131,50 @@ text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", su
 unet = UNet2DConditionModel.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="unet")
 noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
 
-#cell19
 # Move components to GPU
 vae.to("cuda")
 text_encoder.to("cuda")
 unet.to("cuda")
 
-#cell20
 # %%
 # Set up the optimizer and learning rate scheduler
 from accelerate import Accelerator
 from torch.optim import AdamW
 from transformers import get_scheduler
 
-#cell21
+
 # Define hyperparameters
 learning_rate = 1e-5
 num_epochs = 3
 batch_size = 4
 gradient_accumulation_steps = 1 # Adjust based on GPU memory
 
-#cell22
+
 # Initialize Accelerator for distributed training (helpful even with one GPU)
 accelerator = Accelerator(mixed_precision="fp16")
 
-#cell23
 # Optimizer
 optimizer = AdamW(unet.parameters(), lr=learning_rate)
 
 
-#cell24
-# Learning rate scheduler - Update calculation to use effective batch size
-num_update_steps_per_epoch = len(hf_ds) // gradient_accumulation_steps
+# Learning rate scheduler
 lr_scheduler = get_scheduler(
     "constant",
     optimizer=optimizer,
     num_warmup_steps=0,
-    num_training_steps=num_update_steps_per_epoch * num_epochs,
+    num_training_steps=len(hf_ds) * num_epochs // gradient_accumulation_steps,
 )
 
-
-#cell25
 # Prepare everything with Accelerator
 unet, optimizer, lr_scheduler = accelerator.prepare(unet, optimizer, lr_scheduler)
 
 
-#cell26
 # %%
 # Data loading and processing functions (adapt to your dataset structure)
 from torchvision import transforms
 import torch
 
 
-#cell27
 # %%
 # Data loading and processing functions (adapt to your dataset structure)
 from torchvision import transforms
@@ -230,34 +204,30 @@ def preprocess_text(examples):
     ).input_ids
     return {"input_ids": input_ids}
 
-#cell28
+
 # Apply transformations to your dataset
 hf_ds.set_transform(preprocess_images)
 hf_ds.set_transform(preprocess_text)
 
-#cell29
 # Create DataLoader
 train_dataloader = torch.utils.data.DataLoader(
     hf_ds, batch_size=batch_size, shuffle=True
 )
 
 
-#cell30
 # Prepare dataloader with Accelerator
 train_dataloader = accelerator.prepare(train_dataloader)
 
 
-#cell31
 import torch
 from tqdm.auto import tqdm
 
 
-#cell32
+
 # Number of training steps per epoch (adjust as needed)
 num_train_steps_per_epoch = len(train_dataloader)
 
 
-#cell33
 import torch
 from tqdm.auto import tqdm
 from torchvision import transforms
@@ -319,20 +289,18 @@ train_dataloader = torch.utils.data.DataLoader(
 
 
 
-#cell34
 # --- Optional: Saving the Fine-tuned Model ---
 accelerator.wait_for_everyone()
 unwrapped_unet = accelerator.unwrap_model(unet)
 unwrapped_unet.save_pretrained("my_finetuned_unet")
 
-#cell35
 # --- Optional: Using the Fine-tuned Model ---
 from diffusers import StableDiffusionPipeline, AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer
 from PIL import Image # Import Image here as well for display
 from IPython.display import display
 
-#cell36
+
 # Load the saved UNet (and other components if you saved them)
 vae = AutoencoderKL.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="vae")
 tokenizer = CLIPTokenizer.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="tokenizer")
@@ -340,7 +308,6 @@ text_encoder = CLIPTextModel.from_pretrained("CompVis/stable-diffusion-v1-4", su
 unet = UNet2DConditionModel.from_pretrained("my_finetuned_unet") # Load your fine-tuned UNet
 noise_scheduler = DDPMScheduler.from_pretrained("CompVis/stable-diffusion-v1-4", subfolder="scheduler")
 
-#cell37
 # Create a new pipeline with the fine-tuned UNet
 fine_tuned_pipe = StableDiffusionPipeline(
     vae=vae,
@@ -355,16 +322,13 @@ fine_tuned_pipe = StableDiffusionPipeline(
 
 fine_tuned_pipe = fine_tuned_pipe.to("cuda")
 
-#cell38
 # Generate images with the fine-tuned model
 prompt = "A photo of a person riding a bicycle"
 image = fine_tuned_pipe(prompt).images[0]
 display(image)
 
-#cell39
 !pip install googletrans==4.0.0-rc1
 
-#cell40
 from googletrans import Translator
 
 # Initialize the translator
@@ -382,7 +346,6 @@ try:
 except Exception as e:
     print(f"Translation failed: {e}")
 
-#cell41
 # Import the Translator
 from googletrans import Translator
 
@@ -390,7 +353,7 @@ from googletrans import Translator
 translator = Translator()
 
 # Your Telugu prompt
-telugu_prompt = " సైకిల్ నడుపుతున్న వ్యక్తి యొక్క ఫోటో" 
+telugu_prompt = " సైకిల్ నడుపుతున్న వ్యక్తి యొక్క ఫోటో"
 
 # Translate the prompt to English
 try:
